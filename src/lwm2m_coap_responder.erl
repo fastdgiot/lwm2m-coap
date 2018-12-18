@@ -229,6 +229,8 @@ handle_unobserve(_ChId, Request, Resource, State) ->
     {ok, State2} = cancel_observer(Request, State),
     return_resource(Request, Resource, State2).
 
+cancel_observer(undefined, _State) ->
+        {ok, _State};
 cancel_observer(#coap_message{options=Options}, State=#state{module=Module, obstate=ObState}) ->
     ok = invoke_callback(Module, coap_unobserve, [ObState]),
     Uri = proplists:get_value(uri_path, Options, []),
@@ -244,7 +246,7 @@ handle_post(ChId, Request, State=#state{prefix=Prefix, module=Module}) ->
     Content = lwm2m_coap_message:get_content(Request),
     case invoke_callback(Module, coap_post, [ChId, Prefix, uri_query(Request), Content]) of
         {ok, Code, Content2} ->
-            return_resource([], Request, {ok, Code}, Content2, State);
+            return_resource([], Request#coap_message{type=non}, {ok, Code}, Content2, State);
         {error, Error} ->
             return_response(Request, {error, Error}, State);
         {error, Error, Reason} ->
