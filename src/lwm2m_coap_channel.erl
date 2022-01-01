@@ -168,10 +168,10 @@ handle_datagram(BinMessage= <<?VERSION:2, 0:1, _:1, _TKL:4, 0:3, _CodeDetail:5, 
                     State2 = State#state{responder = Re},
                     update_state(State2, TrId,
                         lwm2m_coap_transport:received(BinMessage, create_transport(TrId, undefined, State2)));
-                {error, Error} ->
-                    send_reset(Sock, ChId, MsgId,
-                        {coap_responder_start_failed, Error}),
-                    {noreply, State, hibernate}
+                {error, Reason} ->
+                    send_reset(Sock, ChId, MsgId, {Reason, Uri}),
+                    {stop, {shutdown, coap_responder_start_failed}, State}
+
             end;
         {error, _Error} ->
             {noreply, State, hibernate}
@@ -237,7 +237,8 @@ handle_datagram(BinMessage= <<?VERSION:2, _T:2, TKL:4, _Code:8, MsgId:16, Token:
     end;
 
 % silently ignore other versions
-handle_datagram(<<Ver:2, _/bytes>>, State) when Ver /= ?VERSION ->
+handle_datagram(Unexpected, State) ->
+    logger:debug("Unexpected datagram data: ~p", [Unexpected]),
     {noreply, State, hibernate}.
 
 %%--------------------------------------------------------------------

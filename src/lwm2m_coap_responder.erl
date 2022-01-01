@@ -44,7 +44,7 @@ stop(Pid, Reason) ->
     gen_server:cast(Pid, {stop, Reason}).
 
 notify(Uri, Resource) ->
-    case pg2:get_members({coap_observer, Uri}) of
+    case pg:get_members({coap_observer, Uri}) of
         {error, _} -> ok;
         List -> [gen_server:cast(Pid, Resource) || Pid <- List]
     end.
@@ -65,7 +65,7 @@ init([Channel, Uri, Options]) ->
             {ok, #state{channel=Channel, prefix=Prefix, module=Module, args=Args,
                         insegs=orddict:new(), obseq=0}};
         undefined ->
-            {stop, {resource_handler_not_found, Uri}}
+            {stop, {shutdown, baduri}}
     end.
 
 handle_call(Msg, From, State) ->
@@ -243,13 +243,10 @@ handle_method(_ChId, Request, _Resource, State) ->
 
 handle_observe(ChId, Request=#coap_message{options=Options}, Content=#coap_content{},
         State=#state{prefix=Prefix, module=Module, observer=undefined, lwm2m_state=Lwm2mState, args=Args}) ->
-    % the first observe request from this user to this resource
-    Content = lwm2m_coap_message:get_content(Request),
     case invoke_callback(Module, coap_observe, [ChId, Prefix, requires_ack(Request), Content], Lwm2mState, Args) of
         {ok, Lwm2mState2} ->
             Uri = proplists:get_value(uri_path, Options, []),
-            pg2:create({coap_observer, Uri}),
-            ok = pg2:join({coap_observer, Uri}, self()),
+            ok = pg:join({coap_observer, Uri}, self()),
             return_resource(Request, Content, State#state{observer=Request, lwm2m_state=Lwm2mState2});
         {error, method_not_allowed, Lwm2mState2} ->
             % observe is not supported, fallback to standard get
@@ -275,12 +272,7 @@ cancel_observer(undefined, _State) ->
 cancel_observer(#coap_message{options=Options}, State=#state{module=Module, lwm2m_state=Lwm2mState, args=Args}) ->
     {ok, Lwm2mState2} = invoke_callback(Module, coap_unobserve, [], Lwm2mState, Args),
     Uri = proplists:get_value(uri_path, Options, []),
-    ok = pg2:leave({coap_observer, Uri}, self()),
-    % will the last observer to leave this group please turn out the lights
-    case pg2:get_members({coap_observer, Uri}) of
-        [] -> pg2:delete({coap_observer, Uri});
-        _Else -> ok
-    end,
+    ok = pg:leave({coap_observer, Uri}, self()),
     {ok, State#state{observer=undefined, lwm2m_state=Lwm2mState2}}.
 
 handle_post(ChId, Request, State=#state{prefix=Prefix, module=Module, lwm2m_state=Lwm2mState, args=Args}) ->
